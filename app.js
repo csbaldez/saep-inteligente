@@ -155,7 +155,19 @@ async function renderTurmasReais(){
         if(!turma_id || !nome){toast('Selecione a turma e informe o nome do estudante.');return;}
         save.disabled=true; save.textContent='Salvando...';
         try{
-          const payload={turma_id,nome,matricula:matricula || null,ativo:true};
+          // Recupera a unidade da turma já carregada do Supabase.
+          // A política RLS coordenacao_alunos valida unidade_id no INSERT.
+          const turmaSelecionada = turmas.find(t => t.id === turma_id);
+          if(!turmaSelecionada || !turmaSelecionada.unidade_id){
+            throw new Error('Não foi possível identificar a unidade vinculada à turma selecionada.');
+          }
+          const payload={
+            turma_id,
+            unidade_id:turmaSelecionada.unidade_id,
+            nome,
+            matricula:matricula || null,
+            ativo:true
+          };
           const {error}=await client.from('alunos').insert(payload);
           if(error) throw error;
           document.getElementById('studentName').value='';
