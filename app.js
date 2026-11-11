@@ -37,7 +37,7 @@ const views={
  <label>Status<select id="appStatus"><option>Agendado</option><option>Pendente</option></select></label></div>
  <div class="form-actions"><button class="primary" id="saveApplication">Salvar aplicação</button><button class="secondary" id="cancelApplication">Cancelar</button></div></div>
  </div>`],
- turmas:["Turmas e alunos",`<div class="panel"><div class="panel-heading"><div><h3>Turmas cadastradas</h3><p>Visão demonstrativa da estrutura acadêmica da unidade.</p></div></div><p class="muted">O cadastro detalhado de estudantes, matrículas e vínculos com professores será implementado na próxima etapa.</p></div>`],
+ turmas:["Turmas e alunos",`<div class="panel" id="turmasPanel"><div class="panel-heading"><div><h3>Turmas e estudantes</h3><p>Consulta de estudantes vinculados às turmas disponíveis no seu perfil.</p></div></div><p class="muted">Carregando dados do Supabase...</p></div>`],
  resultados:["Resultados e notas",`<div class="panel"><div class="panel-heading"><div><h3>Importação de resultados</h3><p>Importe uma planilha Excel (.xlsx, .xls) ou CSV com as notas dos simulados.</p></div></div><div class="import-box"><div class="import-symbol">⇧</div><h3>Importar planilha de resultados</h3><p>Selecione um arquivo no seu computador. Nesta versão, os dados são lidos no navegador para validação do formato.</p><button class="primary" onclick="document.getElementById('fileInput').click()">Selecionar planilha</button><p class="hint">Colunas recomendadas: aluno, turma, curso, simulado, competencia, nota, total_questoes, data_aplicacao.</p></div><div id="importPreview"></div></div>`],
  competencias:["Competências",`<div class="panel"><h3>Análise por competência</h3><p class="muted">Após importar os resultados com identificação das competências, será possível visualizar acertos, dificuldades recorrentes e evolução por capacidade técnica.</p></div>`],
  relatorios:["Relatórios",`<div class="panel"><h3>Relatórios gerenciais</h3><p class="muted">Relatórios previstos: síntese institucional, desempenho por turma, evolução individual, mapa de competências e acompanhamento das intervenções pedagógicas.</p></div>`],
@@ -114,17 +114,68 @@ async function loadDashboardTurmas(){
   }
 }
 async function renderTurmasReais(){
-  const container = document.querySelector('#content .panel');
+  const container = document.getElementById('turmasPanel');
   if(!container) return;
-  container.innerHTML = '<div class="panel-heading"><div><h3>Turmas cadastradas</h3><p>Consulta ao banco de dados conforme as permissões do seu perfil.</p></div></div><p class="muted">Carregando turmas...</p>';
+  const {client, profile} = saepSession;
+  container.innerHTML = '<div class="panel-heading"><div><h3>Turmas e estudantes</h3><p>Consulta de estudantes vinculados às turmas disponíveis no seu perfil.</p></div></div><p class="muted">Carregando turmas e estudantes...</p>';
   try{
     const turmas = await getTurmasDoUsuario();
-    if(!document.querySelector('#content .panel')) return;
-    if(!turmas.length){container.innerHTML += '<p class="muted">Nenhuma turma disponível para este perfil.</p>';return;}
-    container.innerHTML = `<div class="panel-heading"><div><h3>Turmas cadastradas</h3><p>${turmas.length} turma(s) encontrada(s) no Supabase.</p></div></div><div class="table-wrap"><table><thead><tr><th>Turma</th><th>Curso</th></tr></thead><tbody>${turmas.map(t=>`<tr><td>${safeText(t.nome)}</td><td>${safeText(t.curso_nome)}</td></tr>`).join('')}</tbody></table></div>`;
+    if(!document.getElementById('turmasPanel')) return;
+    if(!turmas.length){container.innerHTML = '<div class="panel-heading"><div><h3>Turmas e estudantes</h3><p>Nenhuma turma disponível para este perfil.</p></div></div>';return;}
+    const canManage = ['administrador','coordenacao'].includes(profile.papel);
+    container.innerHTML = `<div class="panel-heading"><div><h3>Turmas e estudantes</h3><p>${turmas.length} turma(s) disponível(is) conforme seu perfil.</p></div>${canManage?'<button class="primary" id="toggleStudentForm">＋ Cadastrar estudante</button>':''}</div>
+      ${canManage?`<div class="inline-form hidden" id="studentForm"><h3>Novo estudante</h3><div class="form-grid"><label>Turma<select id="studentClass"><option value="">Selecione a turma</option>${turmas.map(t=>`<option value="${safeText(t.id)}">${safeText(t.nome)}</option>`).join('')}</select></label><label>Nome completo<input id="studentName" maxlength="160" autocomplete="off" placeholder="Nome do estudante"></label><label>Matrícula (opcional)<input id="studentEnrollment" maxlength="60" autocomplete="off" placeholder="Número de matrícula"></label></div><div class="form-actions"><button class="primary" id="saveStudent">Salvar estudante</button><button class="secondary" id="cancelStudent">Cancelar</button></div><p class="hint">Confira os dados antes de salvar. O registro será gravado no Supabase.</p></div>`:''}
+      <div class="inline-form"><div class="form-grid"><label>Filtrar estudantes por turma<select id="filterStudentClass"><option value="">Todas as turmas</option>${turmas.map(t=>`<option value="${safeText(t.id)}">${safeText(t.nome)}</option>`).join('')}</select></label></div></div>
+      <div id="studentsTable" class="table-wrap"><p class="muted">Carregando estudantes...</p></div>`;
+    const loadStudents = async () => {
+      const target = document.getElementById('studentsTable'); if(!target) return;
+      target.innerHTML = '<p class="muted">Consultando estudantes...</p>';
+      try{
+        const chosen = document.getElementById('filterStudentClass')?.value || '';
+        const ids = chosen ? [chosen] : turmas.map(t=>t.id);
+        let q = client.from('alunos').select('id,turma_id,matricula,nome,ativo').in('turma_id',ids).order('nome');
+        const {data,error} = await q; if(error) throw error;
+        const classMap = new Map(turmas.map(t=>[t.id,t.nome]));
+        const students = data || [];
+        target.innerHTML = students.length ? `<table><thead><tr><th>Estudante</th><th>Matrícula</th><th>Turma</th><th>Situação</th></tr></thead><tbody>${students.map(a=>`<tr><td>${safeText(a.nome)}</td><td>${safeText(a.matricula || '—')}</td><td>${safeText(classMap.get(a.turma_id) || '—')}</td><td><span class="status ${a.ativo?'done':'pending'}">${a.ativo?'Ativo':'Inativo'}</span></td></tr>`).join('')}</tbody></table><p class="hint">${students.length} estudante(s) encontrado(s).</p>` : '<p class="muted">Nenhum estudante cadastrado para o filtro selecionado.</p>';
+      }catch(err){
+        console.error('Falha ao consultar estudantes:',err);
+        target.innerHTML = `<p class="muted">Não foi possível consultar estudantes. Verifique as políticas de leitura da tabela alunos no Supabase. Detalhe: ${safeText(err.message || 'erro de consulta')}</p>`;
+      }
+    };
+    document.getElementById('filterStudentClass').addEventListener('change',loadStudents);
+    if(canManage){
+      document.getElementById('toggleStudentForm').addEventListener('click',()=>document.getElementById('studentForm').classList.toggle('hidden'));
+      document.getElementById('cancelStudent').addEventListener('click',()=>document.getElementById('studentForm').classList.add('hidden'));
+      document.getElementById('saveStudent').addEventListener('click',async()=>{
+        const turma_id=document.getElementById('studentClass').value;
+        const nome=document.getElementById('studentName').value.trim();
+        const matricula=document.getElementById('studentEnrollment').value.trim();
+        const save=document.getElementById('saveStudent');
+        if(!turma_id || !nome){toast('Selecione a turma e informe o nome do estudante.');return;}
+        save.disabled=true; save.textContent='Salvando...';
+        try{
+          const payload={turma_id,nome,matricula:matricula || null,ativo:true};
+          const {error}=await client.from('alunos').insert(payload);
+          if(error) throw error;
+          document.getElementById('studentName').value='';
+          document.getElementById('studentEnrollment').value='';
+          document.getElementById('studentForm').classList.add('hidden');
+          document.getElementById('filterStudentClass').value=turma_id;
+          await loadStudents();
+          toast('Estudante cadastrado no Supabase.');
+        }catch(err){
+          console.error('Falha ao cadastrar estudante:',err);
+          toast('Não foi possível cadastrar. Verifique as permissões de gravação da tabela alunos.');
+          const msg=document.getElementById('studentsTable');
+          if(msg) msg.insertAdjacentHTML('afterbegin',`<p class="muted">Detalhe: ${safeText(err.message || 'erro de gravação')}</p>`);
+        }finally{save.disabled=false;save.textContent='Salvar estudante';}
+      });
+    }
+    await loadStudents();
   }catch(err){
     console.error('Falha ao consultar turmas:',err);
-    container.innerHTML += `<p class="muted">Erro ao consultar as turmas: ${safeText(err.message || 'falha de acesso')}</p>`;
+    if(document.getElementById('turmasPanel')) container.innerHTML = `<div class="panel-heading"><div><h3>Turmas e estudantes</h3></div></div><p class="muted">Erro ao consultar as turmas: ${safeText(err.message || 'falha de acesso')}</p>`;
   }
 }
 function showView(name){

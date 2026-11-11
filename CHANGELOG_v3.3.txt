@@ -1,0 +1,11 @@
+SAEP Inteligente v3.3 - alterações sobre a v3.2
+
+1. Substituída a tela demonstrativa "Turmas e alunos" por consulta real.
+2. Adicionada consulta à tabela public.alunos filtrada pelas turmas acessíveis ao usuário.
+3. Adicionado filtro por turma.
+4. Adicionado formulário de inclusão para os papéis administrador e coordenacao.
+5. Inclusão grava nome, turma_id, matrícula (opcional) e ativo=true.
+6. Professor não recebe controles de inclusão.
+7. Erros de leitura/gravação são apresentados sem simular sucesso.
+
+Não foram alterados auth.js, supabase-config.js, políticas RLS ou o esquema do banco.
