@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#102b50">
+  <title>SAEP Inteligente | Gestão de Simulados</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+<div class="login-screen" id="loginScreen">
+  <form class="login-card" id="loginForm">
+    <div class="login-mark">S</div>
+    <div class="eyebrow">SENAI · MONITORAMENTO INSTITUCIONAL</div>
+    <h1>SAEP Inteligente</h1>
+    <p>Acesse com seu e-mail e senha cadastrados no sistema.</p>
+    <label>E-mail<input id="loginEmail" type="email" autocomplete="username" required placeholder="seu.email@exemplo.com"></label>
+    <label>Senha<input id="loginPassword" type="password" autocomplete="current-password" required placeholder="Sua senha"></label>
+    <button class="primary login-submit" id="loginButton" type="submit">Entrar</button>
+    <div class="login-message" id="loginMessage" role="status"></div>
+    <small>O acesso é validado pelo Supabase. Não compartilhe sua senha.</small>
+  </form>
+</div>
+<div class="app-shell hidden" id="appShell">
+  <aside class="sidebar" id="sidebar">
+    <div class="brand"><div class="brand-mark">S</div><div><strong>SAEP Inteligente</strong><small>Gestão de avaliações</small></div></div>
+    <div class="unit-label">UNIDADE</div><div class="unit-name">Minha unidade SENAI</div>
+    <nav id="navigation">
+      <button class="nav-item active" data-view="dashboard"><span>▦</span> Visão geral</button>
+      <button class="nav-item" data-view="agenda"><span>▣</span> Agenda SAEP</button>
+      <button class="nav-item" data-view="professores"><span>♙</span> Professores</button>
+      <button class="nav-item" data-view="comunicacao"><span>✉</span> Modelos de e-mail</button>
+      <button class="nav-item" data-view="turmas"><span>▤</span> Turmas e alunos</button>
+      <button class="nav-item" data-view="resultados"><span>▥</span> Resultados e notas</button>
+      <button class="nav-item" data-view="competencias"><span>◈</span> Competências</button>
+      <button class="nav-item" data-view="relatorios"><span>▧</span> Relatórios</button>
+      <div class="nav-separator"></div>
+      <button class="nav-item" data-view="usuarios"><span>♙</span> Usuários e acessos</button>
+      <button class="nav-item" data-view="configuracoes"><span>⚙</span> Configurações</button>
+    </nav>
+    <div class="sidebar-bottom"><div class="avatar" id="userAvatar">US</div><div class="user-ident"><strong id="userName">Usuário</strong><small id="userRole">Perfil</small></div><button class="logout-button" id="logoutButton" type="button" title="Sair">Sair</button></div>
+  </aside>
+  <main class="main">
+    <header class="topbar"><button class="mobile-menu" id="mobileMenu">☰</button><div><div class="eyebrow">MONITORAMENTO INSTITUCIONAL</div><h1 id="pageTitle">Visão geral</h1></div><div class="top-actions"><span class="demo-pill">DADOS DEMONSTRATIVOS</span><button class="icon-button" title="Notificações">♧</button><div class="date-label" id="today"></div></div></header>
+    <section class="content" id="content">
+      <div class="welcome"><div><div class="eyebrow light">PAINEL DA UNIDADE</div><h2>Acompanhamento dos simulados SAEP</h2><p>Monitore aplicações, resultados e oportunidades de melhoria pedagógica.</p></div><div class="welcome-icon">◉</div></div>
+      <div class="metric-grid" id="metrics"></div>
+      <div class="dashboard-grid">
+        <article class="panel chart-panel"><div class="panel-heading"><div><h3>Evolução do desempenho</h3><p>Média geral por aplicação · dados demonstrativos</p></div><select id="courseFilter"><option value="">Todos os cursos</option></select></div><div class="chart" id="evolutionChart"></div></article>
+        <article class="panel"><div class="panel-heading"><div><h3>Status das aplicações</h3><p>Planejamento e execução</p></div></div><div id="statusSummary" class="status-summary"></div></article>
+        <article class="panel wide"><div class="panel-heading"><div><h3>Próximas aplicações</h3><p>Agenda de simulados da unidade</p></div><button class="text-button" data-go="agenda">Ver agenda →</button></div><div class="table-wrap"><table><thead><tr><th>Turma</th><th>Curso</th><th>Data</th><th>Professor</th><th>Status</th></tr></thead><tbody id="upcomingRows"></tbody></table></div></article>
+        <article class="panel"><div class="panel-heading"><div><h3>Pontos de atenção</h3><p>Indicadores para acompanhamento</p></div></div><div id="attentionList" class="attention-list"></div></article>
+      </div>
+      <div class="notice"><strong>Importante:</strong> esta versão é um protótipo funcional para validação da interface. Os dados demonstrativos ficam no navegador. Não utilize dados pessoais reais de estudantes até conectar o banco institucional e ativar as permissões de acesso.</div>
+    </section>
+  </main>
+</div>
+<input type="file" id="fileInput" accept=".xlsx,.xls,.csv" hidden>
+<div class="toast" id="toast"></div>
+<script src="app.js"></script>
+<script src="supabase-config.js"></script>
+<script src="auth.js"></script>
+</body></html>
