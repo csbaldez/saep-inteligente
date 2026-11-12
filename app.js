@@ -126,7 +126,8 @@ async function renderTurmasReais(){
     container.innerHTML = `<div class="panel-heading"><div><h3>Turmas e estudantes</h3><p>${turmas.length} turma(s) disponível(is) conforme seu perfil.</p></div>${canManage?'<button class="primary" id="toggleStudentForm">＋ Cadastrar estudante</button>':''}</div>
       ${canManage?`<div class="inline-form hidden" id="studentForm"><h3>Novo estudante</h3><div class="form-grid"><label>Turma<select id="studentClass"><option value="">Selecione a turma</option>${turmas.map(t=>`<option value="${safeText(t.id)}">${safeText(t.nome)}</option>`).join('')}</select></label><label>Nome completo<input id="studentName" maxlength="160" autocomplete="off" placeholder="Nome do estudante"></label><label>Matrícula (opcional)<input id="studentEnrollment" maxlength="60" autocomplete="off" placeholder="Número de matrícula"></label></div><div class="form-actions"><button class="primary" id="saveStudent">Salvar estudante</button><button class="secondary" id="cancelStudent">Cancelar</button></div><p class="hint">Confira os dados antes de salvar. O registro será gravado no Supabase.</p></div>`:''}
       <div class="inline-form"><div class="form-grid"><label>Filtrar estudantes por turma<select id="filterStudentClass"><option value="">Todas as turmas</option>${turmas.map(t=>`<option value="${safeText(t.id)}">${safeText(t.nome)}</option>`).join('')}</select></label></div></div>
-      <div id="studentsTable" class="table-wrap"><p class="muted">Carregando estudantes...</p></div>`;
+      <div id="studentsTable" class="table-wrap"><p class="muted">Carregando estudantes...</p></div>
+      ${canManage?`<div class="inline-form hidden" id="studentEditForm"><h3>Editar estudante</h3><input type="hidden" id="editStudentId"><div class="form-grid"><label>Nome completo<input id="editStudentName" maxlength="160" autocomplete="off" required></label><label>Matrícula (opcional)<input id="editStudentEnrollment" maxlength="60" autocomplete="off"></label><label>Situação<select id="editStudentStatus"><option value="true">Ativo</option><option value="false">Inativo</option></select></label></div><div class="form-actions"><button class="primary" id="updateStudent" type="button">Salvar alterações</button><button class="secondary" id="cancelEditStudent" type="button">Cancelar</button></div><p class="hint">A edição atualiza nome, matrícula e situação. A turma do estudante não será alterada nesta etapa.</p></div>`:''}`;
     const loadStudents = async () => {
       const target = document.getElementById('studentsTable'); if(!target) return;
       target.innerHTML = '<p class="muted">Consultando estudantes...</p>';
@@ -137,7 +138,20 @@ async function renderTurmasReais(){
         const {data,error} = await q; if(error) throw error;
         const classMap = new Map(turmas.map(t=>[t.id,t.nome]));
         const students = data || [];
-        target.innerHTML = students.length ? `<table><thead><tr><th>Estudante</th><th>Matrícula</th><th>Turma</th><th>Situação</th></tr></thead><tbody>${students.map(a=>`<tr><td>${safeText(a.nome)}</td><td>${safeText(a.matricula || '—')}</td><td>${safeText(classMap.get(a.turma_id) || '—')}</td><td><span class="status ${a.ativo?'done':'pending'}">${a.ativo?'Ativo':'Inativo'}</span></td></tr>`).join('')}</tbody></table><p class="hint">${students.length} estudante(s) encontrado(s).</p>` : '<p class="muted">Nenhum estudante cadastrado para o filtro selecionado.</p>';
+        target.innerHTML = students.length ? `<table><thead><tr><th>Estudante</th><th>Matrícula</th><th>Turma</th><th>Situação</th>${canManage?'<th>Ação</th>':''}</tr></thead><tbody>${students.map(a=>`<tr><td>${safeText(a.nome)}</td><td>${safeText(a.matricula || '—')}</td><td>${safeText(classMap.get(a.turma_id) || '—')}</td><td><span class="status ${a.ativo?'done':'pending'}">${a.ativo?'Ativo':'Inativo'}</span></td>${canManage?`<td><button class="secondary" type="button" data-edit-student="${safeText(a.id)}">Editar</button></td>`:''}</tr>`).join('')}</tbody></table><p class="hint">${students.length} estudante(s) encontrado(s).</p>` : '<p class="muted">Nenhum estudante cadastrado para o filtro selecionado.</p>';
+        if(canManage){
+          target.querySelectorAll('[data-edit-student]').forEach(button=>button.addEventListener('click',()=>{
+            const student=students.find(item=>item.id===button.dataset.editStudent);
+            if(!student)return;
+            const editor=document.getElementById('studentEditForm');
+            editor.classList.remove('hidden');
+            document.getElementById('editStudentId').value=student.id;
+            document.getElementById('editStudentName').value=student.nome || '';
+            document.getElementById('editStudentEnrollment').value=student.matricula || '';
+            document.getElementById('editStudentStatus').value=student.ativo?'true':'false';
+            editor.scrollIntoView({behavior:'smooth',block:'center'});
+          }));
+        }
       }catch(err){
         console.error('Falha ao consultar estudantes:',err);
         target.innerHTML = `<p class="muted">Não foi possível consultar estudantes. Verifique as políticas de leitura da tabela alunos no Supabase. Detalhe: ${safeText(err.message || 'erro de consulta')}</p>`;
@@ -183,6 +197,28 @@ async function renderTurmasReais(){
           if(msg) msg.insertAdjacentHTML('afterbegin',`<p class="muted">Detalhe: ${safeText(err.message || 'erro de gravação')}</p>`);
         }finally{save.disabled=false;save.textContent='Salvar estudante';}
       });
+      document.getElementById('cancelEditStudent').addEventListener('click',()=>document.getElementById('studentEditForm').classList.add('hidden'));
+      document.getElementById('updateStudent').addEventListener('click',async()=>{
+        const id=document.getElementById('editStudentId').value;
+        const nome=document.getElementById('editStudentName').value.trim();
+        const matricula=document.getElementById('editStudentEnrollment').value.trim();
+        const ativo=document.getElementById('editStudentStatus').value==='true';
+        const button=document.getElementById('updateStudent');
+        if(!nome){toast('Informe o nome do estudante.');return;}
+        button.disabled=true;button.textContent='Salvando...';
+        try{
+          const {error}=await client.from('alunos').update({nome,matricula:matricula||null,ativo}).eq('id',id);
+          if(error)throw error;
+          document.getElementById('studentEditForm').classList.add('hidden');
+          await loadStudents();
+          toast('Dados do estudante atualizados no Supabase.');
+        }catch(err){
+          console.error('Falha ao editar estudante:',err);
+          toast('Não foi possível atualizar. Verifique as permissões RLS da tabela alunos.');
+          const target=document.getElementById('studentsTable');
+          if(target)target.insertAdjacentHTML('afterbegin',`<p class="muted">Detalhe: ${safeText(err.message||'erro de atualização')}</p>`);
+        }finally{button.disabled=false;button.textContent='Salvar alterações';}
+      });
     }
     await loadStudents();
   }catch(err){
@@ -192,6 +228,11 @@ async function renderTurmasReais(){
 }
 function showView(name){
  currentView = name;
+ const modePill=document.getElementById('dataModePill');
+ if(modePill){
+  modePill.textContent=name==='turmas'?'DADOS DO SUPABASE':'DADOS DEMONSTRATIVOS';
+  modePill.title=name==='turmas'?'Esta tela consulta os dados reais da tabela alunos no Supabase.':'Esta área ainda utiliza dados demonstrativos ou funcionalidades em validação.';
+ }
  if(name==="dashboard"){
   $("#pageTitle").textContent="Visão geral";
   $("#content").innerHTML=dashboardMarkup;
