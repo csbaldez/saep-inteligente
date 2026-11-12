@@ -123,8 +123,9 @@ async function renderTurmasReais(){
     if(!document.getElementById('turmasPanel')) return;
     if(!turmas.length){container.innerHTML = '<div class="panel-heading"><div><h3>Turmas e estudantes</h3><p>Nenhuma turma disponível para este perfil.</p></div></div>';return;}
     const canManage = ['administrador','coordenacao'].includes(profile.papel);
-    container.innerHTML = `<div class="panel-heading"><div><h3>Turmas e estudantes</h3><p>${turmas.length} turma(s) disponível(is) conforme seu perfil.</p></div>${canManage?'<button class="primary" id="toggleStudentForm">＋ Cadastrar estudante</button>':''}</div>
-      ${canManage?`<div class="inline-form hidden" id="studentForm"><h3>Novo estudante</h3><div class="form-grid"><label>Turma<select id="studentClass"><option value="">Selecione a turma</option>${turmas.map(t=>`<option value="${safeText(t.id)}">${safeText(t.nome)}</option>`).join('')}</select></label><label>Nome completo<input id="studentName" maxlength="160" autocomplete="off" placeholder="Nome do estudante"></label><label>Matrícula (opcional)<input id="studentEnrollment" maxlength="60" autocomplete="off" placeholder="Número de matrícula"></label></div><div class="form-actions"><button class="primary" id="saveStudent">Salvar estudante</button><button class="secondary" id="cancelStudent">Cancelar</button></div><p class="hint">Confira os dados antes de salvar. O registro será gravado no Supabase.</p></div>`:''}
+    const canCreate = canManage || profile.papel === 'professor';
+    container.innerHTML = `<div class="panel-heading"><div><h3>Turmas e estudantes</h3><p>${turmas.length} turma(s) disponível(is) conforme seu perfil.</p></div>${canCreate?'<button class="primary" id="toggleStudentForm">＋ Cadastrar estudante</button>':''}</div>
+      ${canCreate?`<div class="inline-form hidden" id="studentForm"><h3>Novo estudante</h3><div class="form-grid"><label>Turma<select id="studentClass"><option value="">Selecione a turma</option>${turmas.map(t=>`<option value="${safeText(t.id)}">${safeText(t.nome)}</option>`).join('')}</select></label><label>Nome completo<input id="studentName" maxlength="160" autocomplete="off" placeholder="Nome do estudante"></label><label>Matrícula (opcional)<input id="studentEnrollment" maxlength="60" autocomplete="off" placeholder="Número de matrícula"></label></div><div class="form-actions"><button class="primary" id="saveStudent">Salvar estudante</button><button class="secondary" id="cancelStudent">Cancelar</button></div><p class="hint">Confira os dados antes de salvar. O registro será gravado no Supabase.</p></div>`:''}
       <div class="inline-form"><div class="form-grid"><label>Filtrar estudantes por turma<select id="filterStudentClass"><option value="">Todas as turmas</option>${turmas.map(t=>`<option value="${safeText(t.id)}">${safeText(t.nome)}</option>`).join('')}</select></label></div></div>
       <div id="studentsTable" class="table-wrap"><p class="muted">Carregando estudantes...</p></div>
       ${canManage?`<div class="inline-form hidden" id="studentEditForm"><h3>Editar estudante</h3><input type="hidden" id="editStudentId"><div class="form-grid"><label>Nome completo<input id="editStudentName" maxlength="160" autocomplete="off" required></label><label>Matrícula (opcional)<input id="editStudentEnrollment" maxlength="60" autocomplete="off"></label><label>Situação<select id="editStudentStatus"><option value="true">Ativo</option><option value="false">Inativo</option></select></label></div><div class="form-actions"><button class="primary" id="updateStudent" type="button">Salvar alterações</button><button class="secondary" id="cancelEditStudent" type="button">Cancelar</button></div><p class="hint">A edição atualiza nome, matrícula e situação. A turma do estudante não será alterada nesta etapa.</p></div>`:''}`;
@@ -158,7 +159,7 @@ async function renderTurmasReais(){
       }
     };
     document.getElementById('filterStudentClass').addEventListener('change',loadStudents);
-    if(canManage){
+    if(canCreate){
       document.getElementById('toggleStudentForm').addEventListener('click',()=>document.getElementById('studentForm').classList.toggle('hidden'));
       document.getElementById('cancelStudent').addEventListener('click',()=>document.getElementById('studentForm').classList.add('hidden'));
       document.getElementById('saveStudent').addEventListener('click',async()=>{
@@ -197,6 +198,8 @@ async function renderTurmasReais(){
           if(msg) msg.insertAdjacentHTML('afterbegin',`<p class="muted">Detalhe: ${safeText(err.message || 'erro de gravação')}</p>`);
         }finally{save.disabled=false;save.textContent='Salvar estudante';}
       });
+    }
+    if(canManage){
       document.getElementById('cancelEditStudent').addEventListener('click',()=>document.getElementById('studentEditForm').classList.add('hidden'));
       document.getElementById('updateStudent').addEventListener('click',async()=>{
         const id=document.getElementById('editStudentId').value;
