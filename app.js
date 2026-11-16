@@ -124,7 +124,8 @@ async function renderTurmasReais(){
     if(!turmas.length){container.innerHTML = '<div class="panel-heading"><div><h3>Turmas e estudantes</h3><p>Nenhuma turma disponível para este perfil.</p></div></div>';return;}
     const canManage = ['administrador','coordenacao'].includes(profile.papel);
     const canCreate = canManage || profile.papel === 'professor';
-    container.innerHTML = `<div class="panel-heading"><div><h3>Turmas e estudantes</h3><p>${turmas.length} turma(s) disponível(is) conforme seu perfil.</p></div>${canCreate?'<button class="primary" id="toggleStudentForm">＋ Cadastrar estudante</button>':''}</div>
+    container.innerHTML = `<div class="panel-heading"><div><h3>Turmas e estudantes</h3><p>${turmas.length} turma(s) disponível(is) conforme seu perfil.</p></div>${canCreate?'<button class="primary" id="toggleStudentForm">＋ Cadastrar estudante</button>':''}${canManage?'<button class="secondary" id="toggleImportStudents">⇧ Importar Excel</button>':''}</div>
+      ${canManage?`<div class="inline-form hidden" id="importStudentsForm"><h3>Importar planilha institucional</h3><p class="hint">Importe as nove colunas: Aluno, Matrícula, CPF, desempenho da última e penúltima avaliação, Status, Convite, Data de entrada e Data prevista de saída. CPF ficará visível somente para Administrador e Coordenação.</p><div class="form-grid"><label>Turma de destino<select id="importStudentClass"><option value="">Selecione a turma</option>${turmas.map(t=>`<option value="${safeText(t.id)}">${safeText(t.nome)}</option>`).join('')}</select></label><label>Arquivo Excel ou CSV<input id="studentImportFile" type="file" accept=".xlsx,.xls,.csv"></label></div><div id="studentImportPreview"></div><div class="form-actions"><button class="primary" id="confirmStudentImport" type="button" disabled>Confirmar importação</button><button class="secondary" id="cancelStudentImport" type="button">Cancelar</button></div><p class="hint">A importação identifica matrículas repetidas na turma e na própria planilha. Nada será gravado antes da confirmação.</p></div>`:''}
       ${canCreate?`<div class="inline-form hidden" id="studentForm"><h3>Novo estudante</h3><div class="form-grid"><label>Turma<select id="studentClass"><option value="">Selecione a turma</option>${turmas.map(t=>`<option value="${safeText(t.id)}">${safeText(t.nome)}</option>`).join('')}</select></label><label>Nome completo<input id="studentName" maxlength="160" autocomplete="off" placeholder="Nome do estudante"></label><label>Matrícula (opcional)<input id="studentEnrollment" maxlength="60" autocomplete="off" placeholder="Número de matrícula"></label></div><div class="form-actions"><button class="primary" id="saveStudent">Salvar estudante</button><button class="secondary" id="cancelStudent">Cancelar</button></div><p class="hint">Confira os dados antes de salvar. O registro será gravado no Supabase.</p></div>`:''}
       <div class="inline-form"><div class="form-grid"><label>Filtrar estudantes por turma<select id="filterStudentClass"><option value="">Todas as turmas</option>${turmas.map(t=>`<option value="${safeText(t.id)}">${safeText(t.nome)}</option>`).join('')}</select></label></div></div>
       <div id="studentsTable" class="table-wrap"><p class="muted">Carregando estudantes...</p></div>
@@ -159,6 +160,78 @@ async function renderTurmasReais(){
       }
     };
     document.getElementById('filterStudentClass').addEventListener('change',loadStudents);
+    if(canManage){
+      let importRows=[];
+      const panel=document.getElementById('importStudentsForm');
+      const preview=document.getElementById('studentImportPreview');
+      const confirm=document.getElementById('confirmStudentImport');
+      const norm=v=>String(v??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]/g,'');
+      const findKey=(keys,tests)=>keys.find(k=>tests.some(t=>norm(k)===t || norm(k).includes(t)));
+      const clean=v=>String(v??'').trim();
+      const dateISO=v=>{
+        if(v===null||v===undefined||clean(v)==='')return null;
+        if(typeof v==='number' && window.XLSX?.SSF){const d=XLSX.SSF.parse_date_code(v);if(d)return `${d.y}-${String(d.m).padStart(2,'0')}-${String(d.d).padStart(2,'0')}`;}
+        const x=clean(v);let m=x.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})$/);if(m)return `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;
+        m=x.match(/^(\d{4})-(\d{2})-(\d{2})/);if(m)return `${m[1]}-${m[2]}-${m[3]}`;
+        return null;
+      };
+      document.getElementById('toggleImportStudents').addEventListener('click',()=>panel.classList.toggle('hidden'));
+      document.getElementById('importStudentClass').addEventListener('change',()=>{importRows=[];preview.innerHTML='<p class="hint">Turma alterada. Selecione novamente a planilha.</p>';confirm.disabled=true;document.getElementById('studentImportFile').value='';});
+      document.getElementById('cancelStudentImport').addEventListener('click',()=>{panel.classList.add('hidden');importRows=[];preview.innerHTML='';confirm.disabled=true;document.getElementById('studentImportFile').value='';});
+      document.getElementById('studentImportFile').addEventListener('change',async ev=>{
+        importRows=[];preview.innerHTML='';confirm.disabled=true;
+        const file=ev.target.files?.[0];if(!file)return;
+        if(!document.getElementById('importStudentClass').value){toast('Selecione a turma de destino.');ev.target.value='';return;}
+        try{
+          if(!window.XLSX)throw new Error('Biblioteca Excel não carregada. Atualize a página.');
+          const wb=file.name.toLowerCase().endsWith('.csv')?XLSX.read(await file.text(),{type:'string'}):XLSX.read(await file.arrayBuffer(),{type:'array',cellDates:false});
+          const ws=wb.Sheets[wb.SheetNames[0]];const raw=XLSX.utils.sheet_to_json(ws,{defval:'',raw:false});
+          if(!raw.length)throw new Error('A planilha está vazia.');
+          const keys=Object.keys(raw[0]);
+          const k={nome:findKey(keys,['aluno','nome','estudante']),matricula:findKey(keys,['matricula','ra']),cpf:findKey(keys,['cpf']),ult:findKey(keys,['desempenhoultimaavaliacao','desempeultimaavaliacao','desempenhoultima','desempeultima']),pen:findKey(keys,['desempenhopenultimaavaliacao','desempepenultimaavaliacao','desempenhopenultima','desempepenultima']),status:findKey(keys,['status']),convite:findKey(keys,['convite']),entrada:findKey(keys,['datadeentrada','entrada']),saida:findKey(keys,['dataprevistadesaida','previstadesaida','datasaida'])};
+          if(!k.nome||!k.matricula)throw new Error('Não localizei as colunas Aluno e Matrícula. Confira os cabeçalhos da primeira linha.');
+          const turmaId=document.getElementById('importStudentClass').value;
+          const {data:existing,error}=await client.from('alunos').select('matricula').eq('turma_id',turmaId);if(error)throw error;
+          const seen=new Set((existing||[]).map(a=>clean(a.matricula).toLowerCase()).filter(Boolean));
+          const inFile=new Set();
+          importRows=raw.map((row,i)=>{
+            const nome=clean(row[k.nome]),matricula=clean(row[k.matricula]);let motivo='';
+            if(!nome)motivo='Aluno sem nome';else if(!matricula)motivo='Matrícula não informada';else if(seen.has(matricula.toLowerCase()))motivo='Matrícula já cadastrada na turma';else if(inFile.has(matricula.toLowerCase()))motivo='Matrícula repetida na planilha';
+            if(matricula)inFile.add(matricula.toLowerCase());
+            const cpf=clean(k.cpf?row[k.cpf]:'').replace(/\D/g,'');
+            const ult=clean(k.ult?row[k.ult]:'').replace(',','.');const pen=clean(k.pen?row[k.pen]:'').replace(',','.');
+            const dataEntrada=dateISO(k.entrada?row[k.entrada]:'');const dataSaida=dateISO(k.saida?row[k.saida]:'');
+            if(!motivo&&k.cpf&&cpf&&cpf.length!==11)motivo='CPF deve conter 11 dígitos';
+            if(!motivo&&k.ult&&clean(row[k.ult])!==''&&!Number.isFinite(Number(ult)))motivo='Desempenho da última avaliação inválido';
+            if(!motivo&&k.pen&&clean(row[k.pen])!==''&&!Number.isFinite(Number(pen)))motivo='Desempenho da penúltima avaliação inválido';
+            if(!motivo&&k.entrada&&clean(row[k.entrada])!==''&&!dataEntrada)motivo='Data de entrada inválida';
+            if(!motivo&&k.saida&&clean(row[k.saida])!==''&&!dataSaida)motivo='Data prevista de saída inválida';
+            return {linha:i+2,nome,matricula,cpf:cpf||null,desempenho_ultima_avaliacao:ult===''?null:Number(ult),desempenho_penultima_avaliacao:pen===''?null:Number(pen),status_institucional:clean(k.status?row[k.status]:''),convite:clean(k.convite?row[k.convite]:''),data_entrada:dataEntrada,data_prevista_saida:dataSaida,erro:motivo};
+          });
+          const ok=importRows.filter(r=>!r.erro).length;
+          preview.innerHTML=`<p><b>${raw.length} linha(s) analisada(s).</b> ${ok} pronta(s); ${raw.length-ok} com pendência.</p><div class="table-wrap"><table><thead><tr><th>Linha</th><th>Aluno</th><th>Matrícula</th><th>CPF</th><th>Última</th><th>Penúltima</th><th>Status</th><th>Convite</th><th>Entrada</th><th>Saída prevista</th><th>Validação</th></tr></thead><tbody>${importRows.slice(0,50).map(r=>`<tr><td>${r.linha}</td><td>${safeText(r.nome||'—')}</td><td>${safeText(r.matricula||'—')}</td><td>${safeText(r.cpf||'—')}</td><td>${r.desempenho_ultima_avaliacao??'—'}</td><td>${r.desempenho_penultima_avaliacao??'—'}</td><td>${safeText(r.status_institucional||'—')}</td><td>${safeText(r.convite||'—')}</td><td>${safeText(r.data_entrada||'—')}</td><td>${safeText(r.data_prevista_saida||'—')}</td><td>${r.erro?`<span class="status pending">${safeText(r.erro)}</span>`:'<span class="status done">Pronto</span>'}</td></tr>`).join('')}</tbody></table></div>${importRows.length>50?`<p class="hint">Exibindo 50 de ${importRows.length} linhas; todas foram validadas.</p>`:''}`;
+          confirm.disabled=ok===0;
+        }catch(err){console.error('Erro ao validar planilha institucional:',err);preview.innerHTML=`<p class="muted">${safeText(err.message||'Não foi possível ler a planilha.')}</p>`;}
+      });
+      confirm.addEventListener('click',async()=>{
+        const turma_id=document.getElementById('importStudentClass').value;const turma=turmas.find(t=>t.id===turma_id);const ready=importRows.filter(r=>!r.erro);
+        if(!turma||!turma.unidade_id||!ready.length){toast('Confira a turma e as linhas da planilha.');return;}
+        confirm.disabled=true;confirm.textContent='Importando...';
+        try{
+          let count=0;
+          for(const r of ready){
+            const {data:aluno,error:insertError}=await client.from('alunos').insert({turma_id,unidade_id:turma.unidade_id,nome:r.nome,matricula:r.matricula,ativo:true}).select('id').single();
+            if(insertError)throw insertError;
+            const extra={aluno_id:aluno.id,cpf:r.cpf,desempenho_ultima_avaliacao:r.desempenho_ultima_avaliacao,desempenho_penultima_avaliacao:r.desempenho_penultima_avaliacao,status_institucional:r.status_institucional||null,convite:r.convite||null,data_entrada:r.data_entrada,data_prevista_saida:r.data_prevista_saida};
+            const {error:extraError}=await client.from('alunos_dados_institucionais').insert(extra);
+            if(extraError)throw new Error(`O estudante ${r.nome} foi criado, mas os dados complementares não foram gravados: ${extraError.message}. Verifique a migração SQL antes de repetir a importação.`);
+            count++;
+          }
+          document.getElementById('filterStudentClass').value=turma_id;await loadStudents();panel.classList.add('hidden');importRows=[];preview.innerHTML='';document.getElementById('studentImportFile').value='';toast(`${count} estudante(s) importado(s) com os nove campos.`);
+        }catch(err){console.error('Falha na importação:',err);toast(`Importação interrompida: ${err.message||'erro no Supabase'}`);await loadStudents();}
+        finally{confirm.textContent='Confirmar importação';confirm.disabled=false;}
+      });
+    }
     if(canCreate){
       document.getElementById('toggleStudentForm').addEventListener('click',()=>document.getElementById('studentForm').classList.toggle('hidden'));
       document.getElementById('cancelStudent').addEventListener('click',()=>document.getElementById('studentForm').classList.add('hidden'));
