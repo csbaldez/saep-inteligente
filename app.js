@@ -38,9 +38,9 @@ const views={
  <div class="form-actions"><button class="primary" id="saveApplication">Salvar aplicação</button><button class="secondary" id="cancelApplication">Cancelar</button></div></div>
  </div>`],
  turmas:["Turmas e alunos",`<div class="panel" id="turmasPanel"><div class="panel-heading"><div><h3>Turmas e estudantes</h3><p>Consulta de estudantes vinculados às turmas disponíveis no seu perfil.</p></div></div><p class="muted">Carregando dados do Supabase...</p></div>`],
- resultados:["Resultados e notas",`<div class="panel"><div class="panel-heading"><div><h3>Importação de resultados</h3><p>Importe uma planilha Excel (.xlsx, .xls) ou CSV com as notas dos simulados.</p></div></div><div class="import-box"><div class="import-symbol">⇧</div><h3>Importar planilha de resultados</h3><p>Selecione um arquivo no seu computador. Nesta versão, os dados são lidos no navegador para validação do formato.</p><button class="primary" onclick="document.getElementById('fileInput').click()">Selecionar planilha</button><p class="hint">Colunas recomendadas: aluno, turma, curso, simulado, competencia, nota, total_questoes, data_aplicacao.</p></div><div id="importPreview"></div></div>`],
- competencias:["Competências",`<div class="panel"><h3>Análise por competência</h3><p class="muted">Após importar os resultados com identificação das competências, será possível visualizar acertos, dificuldades recorrentes e evolução por capacidade técnica.</p></div>`],
- relatorios:["Relatórios",`<div class="panel"><h3>Relatórios gerenciais</h3><p class="muted">Relatórios previstos: síntese institucional, desempenho por turma, evolução individual, mapa de competências e acompanhamento das intervenções pedagógicas.</p></div>`],
+ resultados:["Resultados e notas",`<div class="panel" id="pedagogicalPanel"><div class="panel-heading"><div><h3>Resultados e notas</h3><p>Notas registradas nas aplicações das turmas acessíveis ao seu perfil.</p></div></div><p class="muted">Carregando resultados do Supabase...</p></div>`],
+ competencias:["Competências",`<div class="panel" id="pedagogicalPanel"><div class="panel-heading"><div><h3>Desempenho por competência</h3><p>Consolidação das pontuações registradas por competência.</p></div></div><p class="muted">Carregando dados do Supabase...</p></div>`],
+ relatorios:["Relatórios",`<div class="panel" id="pedagogicalPanel"><div class="panel-heading"><div><h3>Relatórios pedagógicos</h3><p>Desempenho dos estudantes, competências e intervenções pedagógicas.</p></div></div><p class="muted">Carregando dados do Supabase...</p></div>`],
  professores:["Professores",`<div class="panel"><div class="panel-heading"><div><h3>Cadastro de professores</h3><p>Cadastre o e-mail que receberá os comunicados de agendamento.</p></div></div>
  <div class="inline-form"><div class="form-grid"><label>Nome do professor<input id="profName" placeholder="Nome completo"></label><label>E-mail institucional<input id="profEmail" type="email" placeholder="professor@instituicao.com.br"></label></div><div class="form-actions"><button class="primary" id="saveProfessor">Cadastrar professor</button></div></div>
  <div class="table-wrap"><table><thead><tr><th>Professor</th><th>E-mail</th><th>Situação</th></tr></thead><tbody id="professorRows"></tbody></table></div></div>`],
@@ -302,12 +302,149 @@ async function renderTurmasReais(){
     if(document.getElementById('turmasPanel')) container.innerHTML = `<div class="panel-heading"><div><h3>Turmas e estudantes</h3></div></div><p class="muted">Erro ao consultar as turmas: ${safeText(err.message || 'falha de acesso')}</p>`;
   }
 }
+// Módulo pedagógico integrado ao Supabase - v3.5.0
+let pedagogicalData = null;
+const scoreFmt = value => value === null || value === undefined || value === '' ? '—' : Number(value).toLocaleString('pt-BR',{maximumFractionDigits:2});
+const dateFmt = value => value ? new Date(value + (String(value).length===10?'T12:00:00':'')).toLocaleDateString('pt-BR') : '—';
+async function loadPedagogicalData(){
+  const {client, profile} = saepSession;
+  if(!client || !profile) throw new Error('Sessão do usuário ainda não foi carregada.');
+  const turmas = await getTurmasDoUsuario();
+  const turmaIds = turmas.map(t=>t.id);
+  if(!turmaIds.length) return {turmas,students:[],applications:[],results:[],competencies:[],simulados:[],interventions:[]};
+  const [studentRes, appRes] = await Promise.all([
+    client.from('alunos').select('id,nome,matricula,turma_id,ativo').in('turma_id',turmaIds).order('nome'),
+    client.from('aplicacoes').select('id,simulado_id,turma_id,professor_id,data_aplicacao,horario,status,observacoes').in('turma_id',turmaIds).order('data_aplicacao',{ascending:false})
+  ]);
+  if(studentRes.error) throw studentRes.error;
+  if(appRes.error) throw appRes.error;
+  const students = studentRes.data || [], applications = appRes.data || [];
+  const appIds = applications.map(a=>a.id);
+  const studentIds = students.map(a=>a.id);
+  const simuladoIds = [...new Set(applications.map(a=>a.simulado_id).filter(Boolean))];
+  const [resultRes, simRes] = await Promise.all([
+    appIds.length ? client.from('resultados').select('id,aluno_id,aplicacao_id,competencia_id,pontuacao,criado_em').in('aplicacao_id',appIds) : Promise.resolve({data:[],error:null}),
+    simuladoIds.length ? client.from('simulados').select('id,nome,descricao,ativo').in('id',simuladoIds) : Promise.resolve({data:[],error:null})
+  ]);
+  if(resultRes.error) throw resultRes.error;
+  if(simRes.error) throw simRes.error;
+  const results = resultRes.data || [], simulados = simRes.data || [];
+  const competencyIds = [...new Set(results.map(r=>r.competencia_id).filter(Boolean))];
+  const courseIds = [...new Set(turmas.map(t=>t.curso_id).filter(Boolean))];
+  const [compRes, interventionRes] = await Promise.all([
+    competencyIds.length ? client.from('competencias').select('id,codigo,descricao,curso_id').in('id',competencyIds) : Promise.resolve({data:[],error:null}),
+    studentIds.length ? client.from('intervencoes').select('id,aluno_id,competencia_id,descricao,status,criado_em').in('aluno_id',studentIds) : Promise.resolve({data:[],error:null})
+  ]);
+  if(compRes.error) throw compRes.error;
+  if(interventionRes.error) throw interventionRes.error;
+  return {turmas,students,applications,results,competencies:compRes.data||[],simulados,interventions:interventionRes.data||[],courseIds};
+}
+function pedMaps(data){
+  return {
+    turma:new Map(data.turmas.map(x=>[x.id,x.nome])),
+    student:new Map(data.students.map(x=>[x.id,x])),
+    app:new Map(data.applications.map(x=>[x.id,x])),
+    sim:new Map(data.simulados.map(x=>[x.id,x.nome])),
+    comp:new Map(data.competencies.map(x=>[x.id,x]))
+  };
+}
+function pedFiltersMarkup(data){
+  return `<div class="inline-form"><div class="form-grid">
+    <label>Turma<select id="pedFilterClass"><option value="">Todas as turmas</option>${data.turmas.map(t=>`<option value="${safeText(t.id)}">${safeText(t.nome)}</option>`).join('')}</select></label>
+    <label>Estudante<select id="pedFilterStudent"><option value="">Todos os estudantes</option>${data.students.map(s=>`<option value="${safeText(s.id)}">${safeText(s.nome)}</option>`).join('')}</select></label>
+    <label>Avaliação<select id="pedFilterApplication"><option value="">Todas as avaliações</option>${data.applications.map(a=>`<option value="${safeText(a.id)}">${safeText(data.simulados.find(s=>s.id===a.simulado_id)?.nome || 'Simulado')} · ${safeText(dateFmt(a.data_aplicacao))}</option>`).join('')}</select></label>
+  </div></div>`;
+}
+function getPedFiltered(data){
+  const turmaId=document.getElementById('pedFilterClass')?.value||'';
+  const studentId=document.getElementById('pedFilterStudent')?.value||'';
+  const appId=document.getElementById('pedFilterApplication')?.value||'';
+  const allowedStudents=new Set(data.students.filter(s=>(!turmaId||s.turma_id===turmaId)&&(!studentId||s.id===studentId)).map(s=>s.id));
+  const allowedApps=new Set(data.applications.filter(a=>(!turmaId||a.turma_id===turmaId)&&(!appId||a.id===appId)).map(a=>a.id));
+  const results=data.results.filter(r=>allowedStudents.has(r.aluno_id)&&allowedApps.has(r.aplicacao_id));
+  return {turmaId,studentId,appId,results,students:data.students.filter(s=>(!turmaId||s.turma_id===turmaId)&&(!studentId||s.id===studentId)),applications:data.applications.filter(a=>(!turmaId||a.turma_id===turmaId)&&(!appId||a.id===appId)),interventions:data.interventions.filter(i=>allowedStudents.has(i.aluno_id))};
+}
+function wirePedFilters(data, render){
+  const cls=document.getElementById('pedFilterClass'), stu=document.getElementById('pedFilterStudent'), app=document.getElementById('pedFilterApplication');
+  const refresh=()=>{
+    const oldStudent=stu.value, oldApp=app.value, turmaId=cls.value;
+    const students=data.students.filter(s=>!turmaId||s.turma_id===turmaId);
+    const apps=data.applications.filter(a=>!turmaId||a.turma_id===turmaId);
+    stu.innerHTML='<option value="">Todos os estudantes</option>'+students.map(s=>`<option value="${safeText(s.id)}">${safeText(s.nome)}</option>`).join('');
+    app.innerHTML='<option value="">Todas as avaliações</option>'+apps.map(a=>`<option value="${safeText(a.id)}">${safeText(data.simulados.find(s=>s.id===a.simulado_id)?.nome||'Simulado')} · ${safeText(dateFmt(a.data_aplicacao))}</option>`).join('');
+    if(students.some(s=>s.id===oldStudent)) stu.value=oldStudent;
+    if(apps.some(a=>a.id===oldApp)) app.value=oldApp;
+    render();
+  };
+  cls.addEventListener('change',refresh); stu.addEventListener('change',render); app.addEventListener('change',render);
+}
+function renderResultsContent(data){
+  const target=document.getElementById('pedagogicalPanel'); if(!target)return;
+  if(!data.turmas.length){target.innerHTML='<p class="muted">Não há turmas disponíveis para este perfil.</p>';return;}
+  const maps=pedMaps(data);
+  const draw=()=>{
+    const f=getPedFiltered(data);
+    const rows=f.results.map(r=>{const s=maps.student.get(r.aluno_id),a=maps.app.get(r.aplicacao_id),c=maps.comp.get(r.competencia_id);return `<tr><td>${safeText(dateFmt(a?.data_aplicacao))}</td><td>${safeText(maps.turma.get(a?.turma_id)||'—')}</td><td>${safeText(s?.nome||'Estudante não disponível')}</td><td>${safeText(maps.sim.get(a?.simulado_id)||'Simulado')}</td><td>${safeText(c?.codigo||'')} ${safeText(c?.descricao||'Competência não informada')}</td><td>${safeText(scoreFmt(r.pontuacao))}</td></tr>`;}).join('');
+    const table=rows?`<div class="table-wrap"><table><thead><tr><th>Data</th><th>Turma</th><th>Estudante</th><th>Avaliação</th><th>Competência</th><th>Pontuação</th></tr></thead><tbody>${rows}</tbody></table></div><p class="hint">${f.results.length} registro(s) de resultado. A pontuação é exibida conforme gravada no banco, sem conversão para percentual.</p>`:'<p class="muted">Nenhum resultado encontrado para os filtros selecionados.</p>';
+    const heading=target.querySelector('#pedResultsTable'); if(heading)heading.innerHTML=table;
+  };
+  target.innerHTML=`<div class="panel-heading"><div><h3>Resultados e notas</h3><p>Consulta de pontuações reais do Supabase, respeitando as permissões do seu perfil.</p></div></div>${pedFiltersMarkup(data)}<div id="pedResultsTable"></div>`;
+  wirePedFilters(data,draw); draw();
+}
+function renderCompetenciesContent(data){
+  const target=document.getElementById('pedagogicalPanel'); if(!target)return;
+  if(!data.turmas.length){target.innerHTML='<p class="muted">Não há turmas disponíveis para este perfil.</p>';return;}
+  const maps=pedMaps(data);
+  const draw=()=>{
+    const f=getPedFiltered(data), groups=new Map();
+    f.results.forEach(r=>{const key=r.competencia_id||'sem';const g=groups.get(key)||{sum:0,count:0};if(r.pontuacao!==null&&r.pontuacao!==undefined){g.sum+=Number(r.pontuacao);g.count++;}groups.set(key,g);});
+    const rows=[...groups.entries()].map(([id,g])=>{const c=maps.comp.get(id);return `<tr><td>${safeText(c?.codigo||'—')}</td><td>${safeText(c?.descricao||'Competência não identificada')}</td><td>${g.count}</td><td>${g.count?scoreFmt(g.sum/g.count):'—'}</td></tr>`;}).join('');
+    const box=target.querySelector('#pedCompetencyTable');if(box)box.innerHTML=rows?`<div class="table-wrap"><table><thead><tr><th>Código</th><th>Competência</th><th>Registros</th><th>Média da pontuação</th></tr></thead><tbody>${rows}</tbody></table></div><p class="hint">Médias calculadas sobre os valores numéricos gravados em resultados.pontuacao.</p>`:'<p class="muted">Não há resultados associados a competências nos filtros selecionados.</p>';
+  };
+  target.innerHTML=`<div class="panel-heading"><div><h3>Desempenho por competência</h3><p>Consolidação das pontuações registradas.</p></div></div>${pedFiltersMarkup(data)}<div id="pedCompetencyTable"></div>`;
+  wirePedFilters(data,draw);draw();
+}
+function renderReportsContent(data){
+  const target=document.getElementById('pedagogicalPanel'); if(!target)return;
+  if(!data.turmas.length){target.innerHTML='<p class="muted">Não há turmas disponíveis para este perfil.</p>';return;}
+  const maps=pedMaps(data);
+  const draw=()=>{
+    const f=getPedFiltered(data), byStudent=new Map(), byComp=new Map();
+    f.results.forEach(r=>{
+      const s=byStudent.get(r.aluno_id)||{sum:0,count:0};if(r.pontuacao!==null&&r.pontuacao!==undefined){s.sum+=Number(r.pontuacao);s.count++;}byStudent.set(r.aluno_id,s);
+      const c=byComp.get(r.competencia_id||'sem')||{sum:0,count:0};if(r.pontuacao!==null&&r.pontuacao!==undefined){c.sum+=Number(r.pontuacao);c.count++;}byComp.set(r.competencia_id||'sem',c);
+    });
+    const studentRows=f.students.map(s=>{const g=byStudent.get(s.id)||{sum:0,count:0};const interventions=f.interventions.filter(i=>i.aluno_id===s.id).length;return `<tr><td>${safeText(s.nome)}</td><td>${safeText(maps.turma.get(s.turma_id)||'—')}</td><td>${g.count}</td><td>${g.count?scoreFmt(g.sum/g.count):'—'}</td><td>${interventions}</td></tr>`;}).join('');
+    const compRows=[...byComp.entries()].map(([id,g])=>{const c=maps.comp.get(id);return `<tr><td>${safeText(c?.codigo||'—')}</td><td>${safeText(c?.descricao||'Competência não identificada')}</td><td>${g.count}</td><td>${g.count?scoreFmt(g.sum/g.count):'—'}</td></tr>`;}).join('');
+    const interventionRows=f.interventions.map(i=>{const s=maps.student.get(i.aluno_id),c=maps.comp.get(i.competencia_id);return `<tr><td>${safeText(s?.nome||'—')}</td><td>${safeText(c?.codigo||'—')}</td><td>${safeText(i.descricao||'—')}</td><td>${safeText(i.status||'—')}</td><td>${safeText(dateFmt(i.criado_em))}</td></tr>`;}).join('');
+    const box=target.querySelector('#pedReportTables');if(box)box.innerHTML=`<h3>Desempenho por estudante</h3>${studentRows?`<div class="table-wrap"><table><thead><tr><th>Estudante</th><th>Turma</th><th>Notas registradas</th><th>Média da pontuação</th><th>Intervenções</th></tr></thead><tbody>${studentRows}</tbody></table></div>`:'<p class="muted">Nenhum estudante encontrado.</p>'}<h3>Desempenho por competência</h3>${compRows?`<div class="table-wrap"><table><thead><tr><th>Código</th><th>Competência</th><th>Registros</th><th>Média da pontuação</th></tr></thead><tbody>${compRows}</tbody></table></div>`:'<p class="muted">Não há resultados por competência.</p>'}<h3>Intervenções pedagógicas</h3>${interventionRows?`<div class="table-wrap"><table><thead><tr><th>Estudante</th><th>Competência</th><th>Descrição</th><th>Status</th><th>Data</th></tr></thead><tbody>${interventionRows}</tbody></table></div>`:'<p class="muted">Nenhuma intervenção encontrada para os filtros selecionados.</p>'}<p class="hint">Relatório calculado com os registros disponíveis no Supabase. Médias exibem a pontuação original, sem presumir escala percentual.</p>`;
+  };
+  target.innerHTML=`<div class="panel-heading"><div><h3>Relatórios pedagógicos</h3><p>Desempenho por estudante e competência, com acompanhamento das intervenções.</p></div></div>${pedFiltersMarkup(data)}<div id="pedReportTables"></div>`;
+  wirePedFilters(data,draw);draw();
+}
+async function renderPedagogicalView(name){
+  const target=document.getElementById('pedagogicalPanel'); if(!target)return;
+  target.innerHTML='<p class="muted">Consultando dados pedagógicos no Supabase...</p>';
+  try{
+    const data=await loadPedagogicalData();
+    if(!document.getElementById('pedagogicalPanel'))return;
+    pedagogicalData=data;
+    if(name==='resultados')renderResultsContent(data);
+    else if(name==='competencias')renderCompetenciesContent(data);
+    else renderReportsContent(data);
+  }catch(err){
+    console.error('Falha ao carregar dados pedagógicos:',err);
+    if(document.getElementById('pedagogicalPanel'))target.innerHTML=`<div class="panel-heading"><div><h3>Não foi possível carregar os dados pedagógicos</h3><p>Verifique as políticas RLS e a conexão com o Supabase.</p></div></div><p class="muted">${safeText(err.message||'Erro de consulta')}</p><button class="secondary" id="retryPedagogical">Tentar novamente</button>`;
+    document.getElementById('retryPedagogical')?.addEventListener('click',()=>renderPedagogicalView(name));
+  }
+}
+
 function showView(name){
  currentView = name;
  const modePill=document.getElementById('dataModePill');
  if(modePill){
-  modePill.textContent=name==='turmas'?'DADOS DO SUPABASE':'DADOS DEMONSTRATIVOS';
-  modePill.title=name==='turmas'?'Esta tela consulta os dados reais da tabela alunos no Supabase.':'Esta área ainda utiliza dados demonstrativos ou funcionalidades em validação.';
+  modePill.textContent=['turmas','resultados','competencias','relatorios'].includes(name)?'DADOS DO SUPABASE':'DADOS DEMONSTRATIVOS';
+  modePill.title=['turmas','resultados','competencias','relatorios'].includes(name)?'Esta tela consulta dados reais do Supabase conforme as permissões do perfil.':'Esta área ainda utiliza dados demonstrativos ou funcionalidades em validação.';
  }
  if(name==="dashboard"){
   $("#pageTitle").textContent="Visão geral";
@@ -321,6 +458,7 @@ function showView(name){
  }
  document.querySelectorAll(".nav-item").forEach(b=>b.classList.toggle("active",b.dataset.view===name));
  if(name==="turmas")renderTurmasReais();
+ if(["resultados","competencias","relatorios"].includes(name))renderPedagogicalView(name);
  if(name==="agenda")initAgenda();
  if(name==="professores")initProfessors();
  if(name==="comunicacao")initMail();
