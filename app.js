@@ -546,8 +546,11 @@ function renderResultsContent(data){
     const table=rows?`<div class="table-wrap"><table><thead><tr><th>Data</th><th>Turma</th><th>Estudante</th><th>Avaliação</th><th>Competência</th><th>Pontuação</th></tr></thead><tbody>${rows}</tbody></table></div><p class="hint">${f.results.length} registro(s) de resultado. A pontuação é exibida conforme gravada no banco, sem conversão para percentual.</p>`:'<p class="muted">Nenhum resultado encontrado para os filtros selecionados.</p>';
     const heading=target.querySelector('#pedResultsTable'); if(heading)heading.innerHTML=table;
   };
-  target.innerHTML=`<div class="panel-heading"><div><h3>Resultados e notas</h3><p>Consulta de pontuações reais do Supabase, respeitando as permissões do seu perfil.</p></div></div>${pedFiltersMarkup(data)}<div id="pedResultsTable"></div>`;
-  wirePedFilters(data,draw); draw();
+target.innerHTML = `<div class="panel-heading"><div><h3>Resultados e notas</h3><p>Consulta de pontuações reais do Supabase, respeitando as permissões do seu perfil.</p></div></div>${resultImportMarkup()}${pedFiltersMarkup(data)}<div id="pedResultsTable"></div>`;
+
+wirePedFilters(data, draw);
+wireResultImportPreview();
+draw();
 }
 function renderCompetenciesContent(data){
   const target=document.getElementById('pedagogicalPanel'); if(!target)return;
