@@ -141,6 +141,12 @@ async function renderTurmasReais(){
     for(const id of ['studentCourse','classCourse']){
       const el=document.getElementById(id);if(el){const old=el.value;el.innerHTML=options(cursos.filter(c=>c.ativo!==false),'Selecione o curso');if(cursos.some(c=>c.id===old))el.value=old;}
     }
+    const search=document.getElementById('classCourseSearch');
+    const suggestions=document.getElementById('classCourseSuggestions');
+    if(suggestions)suggestions.innerHTML=cursos.filter(c=>c.ativo!==false).map(c=>`<option value="${safeText(c.nome)}"></option>`).join('');
+    const existingSuggestions=document.getElementById('existingCourseSuggestions');if(existingSuggestions)existingSuggestions.innerHTML=cursos.filter(c=>c.ativo!==false).map(c=>`<option value="${safeText(c.nome)}"></option>`).join('');
+    if(search){const selected=cursos.find(c=>c.id===document.getElementById('classCourse')?.value);search.value=selected?.nome||'';}
+    const courseUnit=document.getElementById('courseUnit');if(courseUnit){const old=courseUnit.value;courseUnit.innerHTML=options(unidades.filter(u=>u.ativo!==false),'Selecione a unidade');if(unidades.some(u=>u.id===old))courseUnit.value=old;if(profile.papel==='coordenacao'){courseUnit.value=profile.unidade_id||'';courseUnit.disabled=true;}}
     const unit=document.getElementById('classUnit');if(unit){const old=unit.value;unit.innerHTML=options(unidades.filter(u=>u.ativo!==false),'Selecione a unidade');if(unidades.some(u=>u.id===old))unit.value=old;if(profile.papel==='coordenacao'){unit.value=profile.unidade_id||'';unit.disabled=true;}}
     const filter=document.getElementById('filterStudentClass');if(filter){const old=filter.value;filter.innerHTML=options(turmas,'Todas as turmas');if(turmas.some(t=>t.id===old))filter.value=old;}
     fillClasses('studentClass',document.getElementById('studentCourse')?.value||'');
@@ -169,8 +175,9 @@ async function renderTurmasReais(){
   try{
     await fetchData();if(!document.getElementById('turmasPanel'))return;
     root.innerHTML=`<div class="panel-heading"><div><h3>Turmas e alunos</h3><p>Cadastro e consulta de estudantes por curso e turma.</p></div></div>
-      ${manage?`<div class="form-actions"><button class="primary" id="toggleClassForm" type="button">＋ Cadastrar turma</button><button class="secondary" id="toggleStudentForm" type="button">＋ Cadastrar aluno</button><button class="secondary" id="toggleImportStudents" type="button">⇧ Importar Excel</button><button class="secondary" id="exportStudents" type="button">⇩ Exportar alunos</button></div>
-      <div class="inline-form hidden" id="classForm"><h3>Nova turma</h3><div class="form-grid"><label>Curso<select id="classCourse"></select></label><label>Código / nome da turma<input id="className" maxlength="160" placeholder="Ex.: HT-ELM-01-N-22-13490"></label><label>Unidade<select id="classUnit"></select></label><label>Situação<select id="classActive"><option value="true">Ativa</option><option value="false">Encerrada</option></select></label></div><p class="hint">Os campos turno e datas ainda não existem na tabela turmas. Nenhuma turma existente será modificada.</p><div class="form-actions"><button class="primary" id="saveClass" type="button">Salvar turma</button><button class="secondary" id="cancelClass" type="button">Cancelar</button></div></div>
+      ${manage?`<div class="form-actions"><button class="secondary" id="toggleCourseForm" type="button">＋ Cadastrar curso</button><button class="primary" id="toggleClassForm" type="button">＋ Cadastrar turma</button><button class="secondary" id="toggleStudentForm" type="button">＋ Cadastrar aluno</button><button class="secondary" id="toggleImportStudents" type="button">⇧ Importar Excel</button><button class="secondary" id="exportStudents" type="button">⇩ Exportar alunos</button></div>
+      <div class="inline-form hidden" id="courseForm"><h3>Cadastrar curso</h3><p class="hint">Pesquise um curso já cadastrado antes de criar outro. Cursos novos ficam disponíveis para futuras turmas.</p><div class="form-grid"><label>Pesquisar ou digitar o nome do curso<input id="newCourseName" maxlength="160" list="existingCourseSuggestions" autocomplete="off" placeholder="Ex.: Técnico em ..."><datalist id="existingCourseSuggestions"></datalist></label><label>Unidade<select id="courseUnit"></select></label></div><div id="courseMatchMessage" class="hint"></div><div class="form-actions"><button class="primary" id="saveCourse" type="button">Salvar novo curso</button><button class="secondary" id="cancelCourse" type="button">Cancelar</button></div></div>
+      <div class="inline-form hidden" id="classForm"><h3>Nova turma</h3><div class="form-grid"><label>Pesquisar curso existente<input id="classCourseSearch" list="classCourseSuggestions" autocomplete="off" placeholder="Digite para localizar um curso"><datalist id="classCourseSuggestions"></datalist><select id="classCourse" style="display:none" aria-hidden="true" tabindex="-1"></select></label><label>Código / nome da turma<input id="className" maxlength="160" placeholder="Ex.: HT-ELM-01-N-22-13490"></label><label>Unidade<select id="classUnit"></select></label><label>Situação<select id="classActive"><option value="true">Ativa</option><option value="false">Encerrada</option></select></label></div><p class="hint">Os campos turno e datas ainda não existem na tabela turmas. Nenhuma turma existente será modificada.</p><div class="form-actions"><button class="primary" id="saveClass" type="button">Salvar turma</button><button class="secondary" id="cancelClass" type="button">Cancelar</button></div></div>
       <div class="inline-form hidden" id="studentForm"><h3>Novo aluno</h3><div class="form-grid"><label>Curso<select id="studentCourse"></select></label><label>Turma<select id="studentClass"></select></label><label>Nome completo<input id="studentName" maxlength="160"></label><label>Matrícula<input id="studentEnrollment" maxlength="60"></label></div><div class="form-actions"><button class="secondary" id="newClassFromStudent" type="button">＋ Nova turma</button><button class="primary" id="saveStudent" type="button">Salvar aluno</button><button class="secondary" id="cancelStudent" type="button">Cancelar</button></div></div>
       <div class="inline-form hidden" id="importStudentsForm"><h3>Importar cadastro de alunos</h3><p class="hint">Modelo: Matrícula | Nome do estudante | Curso | Turma | Unidade. A turma será identificada pelo arquivo. Caso não exista, será necessário cadastrá-la antes de confirmar a importação. Não importa notas.</p><label>Arquivo Excel ou CSV<input id="studentImportFile" type="file" accept=".xlsx,.xls,.csv"></label><div id="studentImportPreview"></div><div class="form-actions"><button class="primary" id="confirmStudentImport" type="button" disabled>Confirmar importação</button><button class="secondary" id="cancelStudentImport" type="button">Cancelar</button></div></div>`:''}
       <div class="inline-form"><label>Filtrar por turma<select id="filterStudentClass"></select></label></div><div id="studentsTable"></div>
@@ -180,6 +187,30 @@ async function renderTurmasReais(){
       const show=id=>document.getElementById(id).classList.remove('hidden');
       const hide=id=>document.getElementById(id).classList.add('hidden');
       const toggle=id=>document.getElementById(id).classList.toggle('hidden');
+      document.getElementById('toggleCourseForm').onclick=()=>toggle('courseForm');
+      document.getElementById('cancelCourse').onclick=()=>hide('courseForm');
+      const courseInput=document.getElementById('newCourseName');
+      const refreshCourseMatches=()=>{
+        const name=clean(courseInput.value),unitId=document.getElementById('courseUnit').value;
+        const found=cursos.find(c=>norm(c.nome)===norm(name)&&(!unitId||c.unidade_id===unitId));
+        document.getElementById('courseMatchMessage').textContent=found?'Este curso já está cadastrado nesta unidade. Selecione-o ao cadastrar uma turma.':'Informe o nome completo de um curso ainda não cadastrado.';
+        document.getElementById('saveCourse').disabled=!name||!!found;
+      };
+      courseInput.oninput=refreshCourseMatches;document.getElementById('courseUnit').onchange=refreshCourseMatches;
+      document.getElementById('saveCourse').onclick=async()=>{
+        const btn=document.getElementById('saveCourse');btn.disabled=true;
+        try{
+          const nome=clean(courseInput.value),unidade_id=document.getElementById('courseUnit').value;
+          if(!nome||!unidade_id)throw new Error('Informe o nome do curso e a unidade.');
+          if(profile.papel==='coordenacao'&&unidade_id!==profile.unidade_id)throw new Error('Unidade não autorizada.');
+          const {data:existing,error:readError}=await client.from('cursos').select('id,nome,unidade_id').eq('unidade_id',unidade_id);if(readError)throw readError;
+          if((existing||[]).some(c=>norm(c.nome)===norm(nome)))throw new Error('Este curso já está cadastrado nesta unidade.');
+          const {error}=await client.from('cursos').insert({nome,unidade_id,ativo:true});if(error)throw error;
+          await fetchData();updateLists();courseInput.value='';hide('courseForm');toast('Curso cadastrado no Supabase.');
+        }catch(err){fail(err);}finally{refreshCourseMatches();}
+      };
+      const classSearch=document.getElementById('classCourseSearch');
+      classSearch.oninput=()=>{const match=cursos.filter(c=>c.ativo!==false&&norm(c.nome)===norm(clean(classSearch.value)));document.getElementById('classCourse').value=match.length===1?match[0].id:'';};
       document.getElementById('toggleClassForm').onclick=()=>toggle('classForm');
       document.getElementById('toggleStudentForm').onclick=()=>toggle('studentForm');
       document.getElementById('newClassFromStudent').onclick=()=>show('classForm');
@@ -189,10 +220,12 @@ async function renderTurmasReais(){
       document.getElementById('cancelEditStudent').onclick=()=>hide('studentEditForm');
       document.getElementById('cancelStudentImport').onclick=()=>{hide('importStudentsForm');previewRows=[];pendingClass=null;document.getElementById('studentImportPreview').innerHTML='';document.getElementById('studentImportFile').value='';document.getElementById('confirmStudentImport').disabled=true;};
       document.getElementById('studentCourse').onchange=e=>fillClasses('studentClass',e.target.value);
+      document.getElementById('existingCourseSuggestions').innerHTML=cursos.filter(c=>c.ativo!==false).map(c=>`<option value="${safeText(c.nome)}"></option>`).join('');
+      refreshCourseMatches();
       const createClass=async(courseId,name,unitId,active=true)=>{
         if(!courseId||!name||!unitId)throw new Error('Informe curso, código da turma e unidade.');
         if(profile.papel==='coordenacao'&&unitId!==profile.unidade_id)throw new Error('Unidade não autorizada.');
-        const course=cursos.find(c=>c.id===courseId);if(!course)throw new Error('Curso não disponível.');
+        const course=cursos.find(c=>c.id===courseId);if(!course)throw new Error('Pesquise e selecione um curso já cadastrado.');
         if(course.unidade_id&&course.unidade_id!==unitId)throw new Error('O curso pertence a outra unidade.');
         if(turmas.some(t=>norm(t.nome)===norm(name)&&t.unidade_id===unitId))throw new Error('Já existe turma com este código nesta unidade.');
         const {data,error}=await client.from('turmas').insert({nome:name,curso_id:courseId,unidade_id:unitId,ativo:active}).select('id').single();if(error)throw error;
@@ -200,7 +233,7 @@ async function renderTurmasReais(){
       };
       document.getElementById('saveClass').onclick=async()=>{
         const btn=document.getElementById('saveClass');btn.disabled=true;
-        try{const courseId=document.getElementById('classCourse').value;const name=clean(document.getElementById('className').value);const unitId=document.getElementById('classUnit').value;const id=await createClass(courseId,name,unitId,document.getElementById('classActive').value==='true');hide('classForm');document.getElementById('studentCourse').value=courseId;fillClasses('studentClass',courseId);document.getElementById('studentClass').value=id;toast('Turma cadastrada no Supabase.');}
+        try{classSearch.oninput();const courseId=document.getElementById('classCourse').value;const name=clean(document.getElementById('className').value);const unitId=document.getElementById('classUnit').value;const id=await createClass(courseId,name,unitId,document.getElementById('classActive').value==='true');hide('classForm');document.getElementById('studentCourse').value=courseId;fillClasses('studentClass',courseId);document.getElementById('studentClass').value=id;toast('Turma cadastrada no Supabase.');}
         catch(err){fail(err);}finally{btn.disabled=false;}
       };
       document.getElementById('saveStudent').onclick=async()=>{
