@@ -580,8 +580,11 @@ function renderReportsContent(data){
     const interventionRows=f.interventions.map(i=>{const s=maps.student.get(i.aluno_id),c=maps.comp.get(i.competencia_id);return `<tr><td>${safeText(s?.nome||'—')}</td><td>${safeText(c?.codigo||'—')}</td><td>${safeText(i.descricao||'—')}</td><td>${safeText(i.status||'—')}</td><td>${safeText(dateFmt(i.criado_em))}</td></tr>`;}).join('');
     const box=target.querySelector('#pedReportTables');if(box)box.innerHTML=`<h3>Desempenho por estudante</h3>${studentRows?`<div class="table-wrap"><table><thead><tr><th>Estudante</th><th>Turma</th><th>Notas registradas</th><th>Média da pontuação</th><th>Intervenções</th></tr></thead><tbody>${studentRows}</tbody></table></div>`:'<p class="muted">Nenhum estudante encontrado.</p>'}<h3>Desempenho por competência</h3>${compRows?`<div class="table-wrap"><table><thead><tr><th>Código</th><th>Competência</th><th>Registros</th><th>Média da pontuação</th></tr></thead><tbody>${compRows}</tbody></table></div>`:'<p class="muted">Não há resultados por competência.</p>'}<h3>Intervenções pedagógicas</h3>${interventionRows?`<div class="table-wrap"><table><thead><tr><th>Estudante</th><th>Competência</th><th>Descrição</th><th>Status</th><th>Data</th></tr></thead><tbody>${interventionRows}</tbody></table></div>`:'<p class="muted">Nenhuma intervenção encontrada para os filtros selecionados.</p>'}<p class="hint">Relatório calculado com os registros disponíveis no Supabase. Médias exibem a pontuação original, sem presumir escala percentual.</p>`;
   };
-  target.innerHTML=`<div class="panel-heading"><div><h3>Relatórios pedagógicos</h3><p>Desempenho por estudante e competência, com acompanhamento das intervenções.</p></div></div>${pedFiltersMarkup(data)}<div id="pedReportTables"></div>`;
-  wirePedFilters(data,draw);draw();
+target.innerHTML=`<div class="panel-heading"><div><h3>Relatórios pedagógicos</h3><p>Desempenho por estudante e competência, com acompanhamento das intervenções.</p></div></div>${resultImportMarkup()}${pedFiltersMarkup(data)}<div id="pedReportTables"></div>`;
+
+wirePedFilters(data,draw);
+wireResultImportPreview();
+draw();
 }
 async function renderPedagogicalView(name){
   const target=document.getElementById('pedagogicalPanel'); if(!target)return;
