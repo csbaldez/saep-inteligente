@@ -378,6 +378,164 @@ function wirePedFilters(data, render){
   };
   cls.addEventListener('change',refresh); stu.addEventListener('change',render); app.addEventListener('change',render);
 }
+
+// SAEP Inteligente 3.6.0
+// Importação de resultados: pré-visualização sem gravação.
+
+function canPreviewResultImport() {
+  const profile = saepSession.profile;
+
+  return ['administrador', 'coordenacao'].includes(profile?.papel)
+    && profile?.ativo !== false;
+}
+
+function resultImportMarkup() {
+  if (!canPreviewResultImport()) return '';
+
+  return `
+    <div class="form-actions">
+      <button type="button" class="secondary"
+        data-open-result-import>
+        ⇧ Importar resultados (Excel/CSV)
+      </button>
+    </div>
+
+    <div class="inline-form hidden" id="resultImportPanel">
+      <h3>Pré-visualizar importação de resultados</h3>
+
+      <p class="hint">
+        Selecione uma planilha para conferência local.
+        Nenhum dado será enviado ao Supabase nesta etapa.
+      </p>
+
+      <label>
+        Arquivo Excel ou CSV
+        <input type="file" id="resultImportFile"
+          accept=".xlsx,.xls,.csv">
+      </label>
+
+      <div id="resultImportPreview" aria-live="polite"></div>
+
+      <div class="form-actions">
+        <button type="button" class="primary" disabled
+          title="Disponível após validação e integração segura">
+          Confirmar importação (em desenvolvimento)
+        </button>
+
+        <button type="button" class="secondary"
+          data-close-result-import>
+          Fechar
+        </button>
+      </div>
+    </div>
+  `;
+}
+
+function wireResultImportPreview() {
+  const panel = document.getElementById('resultImportPanel');
+
+  if (!panel || !canPreviewResultImport()) return;
+
+  const fileInput = panel.querySelector('#resultImportFile');
+  const preview = panel.querySelector('#resultImportPreview');
+
+  panel.parentElement
+    .querySelector('[data-open-result-import]')
+    ?.addEventListener('click', () => {
+      panel.classList.toggle('hidden');
+    });
+
+  panel.querySelector('[data-close-result-import]')
+    ?.addEventListener('click', () => {
+      panel.classList.add('hidden');
+      fileInput.value = '';
+      preview.innerHTML = '';
+    });
+
+  fileInput.addEventListener('change', async () => {
+    const file = fileInput.files?.[0];
+    preview.innerHTML = '';
+
+    if (!file) return;
+
+    try {
+      if (!/\.(xlsx|xls|csv)$/i.test(file.name)) {
+        throw new Error('Selecione um arquivo Excel ou CSV.');
+      }
+
+      if (file.size > 10 * 1024 * 1024) {
+        throw new Error(
+          'Arquivo acima do limite de pré-visualização (10 MB).'
+        );
+      }
+
+      if (!window.XLSX) {
+        throw new Error(
+          'Leitor Excel/CSV não disponível nesta página.'
+        );
+      }
+
+      const wb = /\.csv$/i.test(file.name)
+        ? XLSX.read(await file.text(), { type: 'string' })
+        : XLSX.read(await file.arrayBuffer(), { type: 'array' });
+
+      const sheet = wb.Sheets[wb.SheetNames[0]];
+
+      if (!sheet) {
+        throw new Error('Não foi encontrada uma aba válida.');
+      }
+
+      const rows = XLSX.utils.sheet_to_json(sheet, {
+        defval: '',
+        raw: false
+      });
+
+      const cols = rows.length ? Object.keys(rows[0]) : [];
+
+      const header = cols
+        .map(c => `<th>${safeText(c)}</th>`)
+        .join('');
+
+      const body = rows.slice(0, 8)
+        .map(row => `
+          <tr>
+            ${cols.map(c =>
+              `<td>${safeText(row[c])}</td>`
+            ).join('')}
+          </tr>
+        `).join('');
+
+      preview.innerHTML = `
+        <p>
+          <b>${safeText(file.name)}</b> —
+          ${rows.length} linha(s),
+          ${cols.length} coluna(s).
+        </p>
+
+        ${rows.length ? `
+          <div class="table-wrap">
+            <table>
+              <thead><tr>${header}</tr></thead>
+              <tbody>${body}</tbody>
+            </table>
+          </div>
+        ` : '<p class="muted">A primeira aba está vazia.</p>'}
+
+        <p class="hint">
+          Somente as primeiras 8 linhas são exibidas.
+          Pré-visualização local; nenhuma gravação foi realizada.
+        </p>
+      `;
+
+    } catch (err) {
+      preview.innerHTML = `
+        <p class="muted">
+          ${safeText(err.message || 'Falha ao ler arquivo.')}
+        </p>
+      `;
+    }
+  });
+}
 function renderResultsContent(data){
   const target=document.getElementById('pedagogicalPanel'); if(!target)return;
   if(!data.turmas.length){target.innerHTML='<p class="muted">Não há turmas disponíveis para este perfil.</p>';return;}
